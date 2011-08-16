@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script>
+      // Show button in omnibox when on a turntable page & inject content script
+      function checkForValidUrl(tabId, changeInfo, tab) {
+        if (tab.url.indexOf('turntable.fm/') > -1) {
+          // Add action (disabled)
+          chrome.pageAction.show(tabId);
+          chrome.pageAction.setIcon({
+            tabId: tabId,
+            path: 'disabled.png'
+          });
+
+          // Inject content script
+          chrome.tabs.executeScript(tabId, {
+            file: 'content.js'
+          });
+        }
+      };
+      chrome.tabs.onUpdated.addListener(checkForValidUrl);
+
+      // Active song (if any)
+      var currentSong = null;
+
+      // Song information received from the content script
+      function songChanged(tabId, songUrl, songInfo) {
+        // Update the page action
+        chrome.pageAction.setTitle({
+          tabId: tabId,
+          title: songInfo.artist + ' - ' + songInfo.title
+        });
+        chrome.pageAction.setIcon({
+          tabId: tabId,
+          path: 'enabled.png'
+        });
+
+        // Stash info
+        currentSong = {
+          url: songUrl,
+          artist: songInfo.artist,
+          title: songInfo.title
+        };
+      }
+
+      // Let the content script know the song is changing and request the information
+      function songChanging(tabId, songUrl) {
+        if (currentSong && currentSong.url == songUrl) {
+          return;
+        }
+        chrome.tabs.sendRequest(tabId, {
+          request: 'songInfo',
+          url: songUrl
+        }, function(response) {
+          songChanged(tabId, songUrl, response);
+        });
+      }
+
+      // onResponseStarted does not have tabId, so track all getfile's
+      var getfilesMap = {};
+      chrome.experimental.webRequest.onBeforeRequest.addListener(function(details) {
+        getfilesMap[details.requestId] = details.tabId;
+        return true;
+      }, {
+        urls: [
+          'http://turntable.fm/upload/*',
+          'http://turntable.fm/getfile/*',
+          'http://*.musicnet.com/mp3/*',
+          'http://static.turntable.fm/upload/*'
+        ]
+      });
+
+      // Inject script to watch all requests and track the most recent URL
+      function handleResponse(tabId, details) {
+        // Ignore well known responses
+        if (details.url.indexOf('web/sounds/') != -1) {
+          return;
+        }
+
+        // Pull out headers
+        var contentType;
+        var referer;
+        for (var n = 0; n < details.responseHeaders.length; n++) {
+          var header = details.responseHeaders[n];
+          switch (header.name) {
+            case 'Content-Type':
+              contentType = header.value;
+              break;
+            case 'Referer':
+              referer = header.vlaue;
+              break;
+          }
+        }
+
+        // Determine if audio
+        var likelyAudio = (contentType == 'audio/mpeg');
+        if (!likelyAudio) {
+          // Sometimes partial songs are supported, and get sent as application/octet-stream
+          // Have only seen this on /upload/, and only from Flash
+          if (contentType == 'application/octet-stream') {
+            if (details.url.indexOf('/upload/') != -1 || referer.indexOf('soundmanager') != -1) {
+              likelyAudio = true;
+            } else {
+              console.log('potential audio file ignored:');
+              console.log(details.url);
+              console.log(details);
+            }
+          }
+        }
+
+        // Process audio
+        if (likelyAudio) {
+          console.log('MP3!');
+          console.log(details.url);
+          console.log(details);
+
+          songChanging(tabId, details.url);
+        }
+      }
+      chrome.experimental.webRequest.onResponseStarted.addListener(function(details) {
+        var tabId = getfilesMap[details.requestId];
+        if (tabId === undefined) {
+          // Find the first turntable tab and inject there - hopefully we already have it from before
+          chrome.tabs.getAllInWindow(undefined, function(tabs) {
+            for (var n = 0; n < tabs.length; n++) {
+              if (tab.title.indexOf('Turntable:') != -1) {
+                // Likely a turntable tab
+                handleResponse(tab.id, details);
+                break;
+              }
+            }
+          });
+        } else {
+          handleResponse(tabId, details);
+        }
+      }, {
+        urls: [
+          'http://turntable.fm/upload/*',
+          'http://turntable.fm/getfile/*',
+          'http://*.musicnet.com/mp3/*',
+          'http://static.turntable.fm/upload/*'
+        ]
+      }, ['responseHeaders']);
+
+      // New tab with contents
+      function downloadUrl0(url, filename) {
+        chrome.tabs.create({
+          url: currentSong.url,
+          selected: true
+        });
+      }
+
+      // XHR download with file API
+      function downloadUrl1(url, filename) {
+        var xhr = new XmlHttpRequest();
+        xhr.overrideMimeType('application/octet-stream');
+        xhr.onreadystatechanged = function() {
+          if (xhr.readyState == 4 && xhr.status == 200) {
+            var blob = xhr.responseBlob();
+            var saveas = document.createElement('iframe');
+            saveas.style.display = 'none';
+            if(!window.createObjectURL) {
+              saveas.src = window.webkitURL.createObjectURL(blob);
+            } else {
+              saveas.src = window.createObjectURL(blob);
+            }
+            document.body.appendChild(saveas);
+          }
+        };
+        xhr.open('GET', url, true);
+        xhr.send(null);
+      }
+
+      // Popup with download link
+      function downloadUrl2(url, filename) {
+        var content = '<html><head><title>' + filename + '</title></head><body><a download="' + filename + '" href="' + url + '">' + filename + '</a></body>';
+        chrome.tabs.create({
+          url: 'data:text/html;charset=utf-8,' + content,
+          selected: true
+        });
+      }
+
+      // When button is clicked, download the current song
+      chrome.pageAction.onClicked.addListener(function(tab) {
+        if (!currentSong) {
+          alert('No track recognized - wait until one starts playing');
+          return;
+        }
+
+        // Guess a filename
+        // TODO: sanitize if unicode chars?
+        var filename = currentSong.artist + ' - ' + currentSong.title + '.mp3';
+
+        // Kickoff download
+        downloadUrl2(currentSong.url, filename);
+      });
+    </script>
+  </head>
+</html>

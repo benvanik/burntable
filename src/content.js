@@ -5,6 +5,9 @@ if (!document.getElementById('burntable-list')) {
   list.id = 'burntable-list';
   document.body.appendChild(list);
 
+  // Set of all URLS - used to de-dupe
+  var urlMap = {};
+
   // Attempts to extract the song info from the document
   function getSongInfo(doc) {
     // Full title of the song
@@ -20,6 +23,13 @@ if (!document.getElementById('burntable-list')) {
 
   // Wait for notifications from background
   chrome.extension.onRequest.addListener(function(request, sender, sendResponse) {
+    // Ensure not already in the list
+    if (urlMap[request.url]) {
+      console.log('ignoring request because already in the list: ' + request.url);
+      return;
+    }
+    urlMap[request.url] = true;
+
     // Grab info
     var songInfo;
     try {

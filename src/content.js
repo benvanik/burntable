@@ -46,6 +46,13 @@ if (!document.getElementById('burntable-list')) {
           });
         }
         window.setTimeout(queryGroovesharkInfo, 500);
+      } else if (window.location.href.indexOf('music.google.com') >= 0) {
+        var artist = doc.getElementById('playerArtist').innerText;
+        var title = doc.getElementById('playerSongTitle').innerText;
+        callback({
+          artist: artist,
+          title: title
+        });
       } else {
         // Full title of the song
         var title = doc.getElementsByClassName('title')[1].title;

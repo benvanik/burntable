@@ -6,12 +6,16 @@
       var injectTabUrls = [
         'turntable.fm/',
         'pandora.com',
-        'grooveshark.com'
+        'grooveshark.com',
+        'music.google.com'
       ];
       var injectTabTitles = [
       ];
       // Requests must match these url globs to get tracked
       var watchUrls = [
+        // google music:
+        'http://*.googleusercontent.com/stream/*',
+        'http://*.sj.googleusercontent.com/stream/*',
         // grooveshark:
         'http://*.grooveshark.com/stream.php',
         // pandora:

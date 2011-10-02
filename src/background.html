@@ -2,18 +2,39 @@
 <html>
   <head>
     <script>
+      // Tabs must contain these strings to get the page action/content script
+      var injectTabUrls = [
+        'turntable.fm/',
+        'pandora.com',
+        'grooveshark.com'
+      ];
+      var injectTabTitles = [
+      ];
+      // Requests must match these url globs to get tracked
       var watchUrls = [
+        // grooveshark:
+        'http://*.grooveshark.com/stream.php',
+        // pandora:
         'http://*.pandora.com/access/*',
+        // turntable:
         'http://turntable.fm/upload/*',
         'http://turntable.fm/getfile/*',
         'http://*.musicnet.com/mp3/*',
         'http://static.turntable.fm/upload/*'
       ];
 
+      function isMatchingTab(tab) {
+        for (var n = 0; n < injectTabUrls.length; n++) {
+          if (tab.url.indexOf(injectTabUrls[n]) >= 0) {
+            return true;
+          }
+        }
+        return false;
+      }
+
       // Show button in omnibox when on a turntable page & inject content script
       function checkForValidUrl(tabId, changeInfo, tab) {
-        if ((tab.url.indexOf('turntable.fm/') > -1) ||
-            (tab.url.indexOf('pandora.com') > -1)) {
+        if (isMatchingTab(tab)) {
           // Add action (disabled)
           chrome.pageAction.show(tabId);
           chrome.pageAction.setIcon({
@@ -129,8 +150,8 @@
           // Find the first turntable tab and inject there - hopefully we already have it from before
           chrome.tabs.getAllInWindow(undefined, function(tabs) {
             for (var n = 0; n < tabs.length; n++) {
-              if ((tab.title.indexOf('Turntable:') != -1) ||
-                  (tab.title.indexOf('Pandora Radio') != -1)) {
+              var tab = tabs[n];
+              if (isMatchingTab(tab)) {
                 // Likely a turntable tab
                 handleResponse(tab.id, details);
                 break;

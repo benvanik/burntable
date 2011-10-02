@@ -7,6 +7,8 @@ if (!document.getElementById('burntable-list')) {
   list.style.position = 'absolute';
   list.style.float = 'left';
   list.style.backgroundColor = 'white';
+  list.style.left = '0';
+  list.style.top = '0';
   document.body.appendChild(list);
 
   // Set of all URLS - used to de-dupe
@@ -16,19 +18,34 @@ if (!document.getElementById('burntable-list')) {
   function getSongInfo(doc, callback) {
     try {
       if (window.location.href.indexOf('pandora.com') >= 0) {
-        var queryInfo = function queryInfo() {
+        var queryPandoraInfo = function queryPandoraInfo() {
           var artist = doc.getElementsByClassName('playerBarArtist')[0].innerText;
           var title = doc.getElementsByClassName('playerBarSong')[0].innerText;
           if (!artist.length) {
             window.console.log('song info not yet available');
-            window.setTimeout(queryInfo, 500);
+            window.setTimeout(queryPandoraInfo, 500);
           }
           callback({
             artist: artist,
             title: title
           });
         }
-        window.setTimeout(queryInfo, 500);
+        window.setTimeout(queryPandoraInfo, 500);
+      } else if (window.location.href.indexOf('grooveshark.com') >= 0) {
+        var queryGroovesharkInfo = function queryGroovesharkInfo() {
+          var el = doc.getElementById('playerDetails_nowPlaying');
+          var artist = el.getElementsByClassName('artist')[0].title;
+          var title = el.getElementsByClassName('currentSongLink song')[0].title;
+          if (!artist.length) {
+            window.console.log('song info not yet available');
+            window.setTimeout(queryGroovesharkInfo, 500);
+          }
+          callback({
+            artist: artist,
+            title: title
+          });
+        }
+        window.setTimeout(queryGroovesharkInfo, 500);
       } else {
         // Full title of the song
         var title = doc.getElementsByClassName('title')[1].title;
@@ -49,8 +66,6 @@ if (!document.getElementById('burntable-list')) {
 
   // Wait for notifications from background
   chrome.extension.onRequest.addListener(function(request, sender, sendResponse) {
-    console.log('hello');
-
     // Ensure not already in the list
     if (urlMap[request.url]) {
       console.log('ignoring request because already in the list: ' + request.url);

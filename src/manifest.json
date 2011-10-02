@@ -1,6 +1,6 @@
 {
   "name": "BurnTable",
-  "version": "1.3",
+  "version": "1.4",
   "description": "For when TurnTable goes down...",
   "update_url" : "https://github.com/downloads/benvanik/burntable/chrome-update.xml",
   "background_page": "background.html",
@@ -12,6 +12,7 @@
     "tabs",
     "experimental",
     "http://turntable.fm/",
-    "http://www.pandora.com/"
+    "http://www.pandora.com/",
+    "http://*.grooveshark.com/"
   ]
 }

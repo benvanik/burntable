@@ -2,30 +2,109 @@
 <html>
   <head>
     <script>
-      // Tabs must contain these strings to get the page action/content script
-      var injectTabUrls = [
-        'turntable.fm/',
-        'pandora.com',
-        'grooveshark.com',
-        'music.google.com'
+      function extend(childCtor, parentCtor) {
+        function tempCtor() {};
+        tempCtor.prototype = parentCtor.prototype;
+        childCtor.superClass_ = parentCtor.prototype;
+        childCtor.prototype = new tempCtor();
+        childCtor.prototype.constructor = childCtor;
+      };
+
+      var Service = function(name, pageUrl, iconPath, watchUrls) {
+        this.name = name;
+        this.pageUrl = pageUrl;
+        this.iconPath = iconPath;
+        this.watchUrls = watchUrls;
+      };
+      Service.prototype.matchTab = function(tab) {
+        return (tab.url.indexOf(this.pageUrl) >= 0);
+      };
+
+      var TurnTableService = function() {
+        Service.call(this,
+            'TurnTable',
+            'turntable.fm',
+            'content/turntable.png', [
+              'http://turntable.fm/upload/*',
+              'http://turntable.fm/getfile/*',
+              'http://*.musicnet.com/mp3/*',
+              'http://static.turntable.fm/upload/*'
+            ]);
+      };
+      extend(TurnTableService, Service);
+
+      var PandoraService = function() {
+        Service.call(this,
+            'Pandora',
+            'pandora.com',
+            'content/pandora.png', [
+              'http://*.pandora.com/access/*',
+            ]);
+      };
+      extend(PandoraService, Service);
+
+      var GroovesharkService = function() {
+        Service.call(this,
+            'Grooveshark',
+            'grooveshark.com',
+            'content/grooveshark.png', [
+              'http://*.grooveshark.com/stream.php',
+            ]);
+      };
+      extend(GroovesharkService, Service);
+
+      var GoogleMusicService = function() {
+        Service.call(this,
+            'Google Music',
+            'music.google.com',
+            'content/googlemusic.png', [
+              'http://*.googleusercontent.com/stream/*',
+              'http://*.sj.googleusercontent.com/stream/*',
+            ]);
+      };
+      extend(GoogleMusicService, Service);
+
+      var services = [
+        new TurnTableService(),
+        new PandoraService(),
+        new GroovesharkService(),
+        //new GoogleMusicService()
       ];
-      var injectTabTitles = [
-      ];
-      // Requests must match these url globs to get tracked
-      var watchUrls = [
-        // google music:
-        'http://*.googleusercontent.com/stream/*',
-        'http://*.sj.googleusercontent.com/stream/*',
-        // grooveshark:
-        'http://*.grooveshark.com/stream.php',
-        // pandora:
-        'http://*.pandora.com/access/*',
-        // turntable:
-        'http://turntable.fm/upload/*',
-        'http://turntable.fm/getfile/*',
-        'http://*.musicnet.com/mp3/*',
-        'http://static.turntable.fm/upload/*'
-      ];
+
+      function getWatchUrls() {
+        var urls = [];
+        for (var n = 0; n < services.length; n++) {
+          var serviceUrls = services[n].watchUrls;
+          for (var m = 0; m < serviceUrls.length; m++) {
+            urls.push(serviceUrls[m]);
+          }
+        }
+        return urls;
+      };
+
+      function getTabService(tab) {
+        for (var n = 0; n < services.length; n++) {
+          if (services[n].matchTab(tab)) {
+            return services[n];
+          }
+        }
+        return null;
+      }
+
+      var TabState = function(tabId, service) {
+        this.tabId = tabId;
+        this.service = service;
+
+        // {
+        //   url: string,
+        //   artist: string,
+        //   title: string
+        // }
+        this.currentSong = null;
+      };
+
+      // Map of tabId -> TabState
+      var tabStates = {};
 
       function isMatchingTab(tab) {
         for (var n = 0; n < injectTabUrls.length; n++) {
@@ -36,52 +115,42 @@
         return false;
       }
 
-      // Show button in omnibox when on a turntable page & inject content script
+      // Inject the content script into tabs
       function checkForValidUrl(tabId, changeInfo, tab) {
-        if (isMatchingTab(tab)) {
-          // Add action (disabled)
-          chrome.pageAction.show(tabId);
-          chrome.pageAction.setIcon({
-            tabId: tabId,
-            path: 'disabled.png'
-          });
+        var tabState = tabStates[tabId];
+        if (!tabState) {
+          var service = getTabService(tab);
+          if (service) {
+            // Setup state
+            tabStates[tabId] = new TabState(tabId, service);
 
-          // Inject content script
-          chrome.tabs.executeScript(tabId, {
-            file: 'content.js'
-          });
+            // Set page action icon
+            chrome.pageAction.setIcon({
+              tabId: tabId,
+              path: service.iconPath
+            });
+
+            // Inject content script
+            chrome.tabs.executeScript(tabId, {
+              file: 'contentscript.js'
+            });
+          }
         }
       };
       chrome.tabs.onUpdated.addListener(checkForValidUrl);
 
-      // Active song (if any)
-      var currentSong = null;
-
-      // Song information received from the content script
-      function songChanged(tabId, songUrl, songInfo) {
-        // Update the page action
-        chrome.pageAction.setTitle({
-          tabId: tabId,
-          title: songInfo.artist + ' - ' + songInfo.title
-        });
-        chrome.pageAction.setIcon({
-          tabId: tabId,
-          path: 'enabled.png'
-        });
-
-        // Stash info
-        currentSong = {
-          url: songUrl,
-          artist: songInfo.artist,
-          title: songInfo.title
-        };
-      }
-
       // Let the content script know the song is changing and request the information
       function songChanging(tabId, songUrl) {
-        if (currentSong && currentSong.url == songUrl) {
+        var tabState = tabStates[tabId];
+        if (!tabState) {
           return;
         }
+        // Ignore duplicate updates
+        if (tabState.currentSong && tabState.currentSong.url == songUrl) {
+          return;
+        }
+
+        // Request song information
         chrome.tabs.sendRequest(tabId, {
           request: 'songInfo',
           url: songUrl
@@ -90,18 +159,39 @@
         });
       }
 
+      // Song information received from the content script
+      function songChanged(tabId, songUrl, songInfo) {
+        // Update the page action
+        chrome.pageAction.setTitle({
+          tabId: tabId,
+          title: songInfo.artist + ' - ' + songInfo.title
+        });
+
+        // Ensure visible
+        chrome.pageAction.show(tabId);
+
+        // Stash info
+        var tabState = tabStates[tabId];
+        tabState.currentSong ={
+          url: songUrl,
+          artist: songInfo.artist,
+          title: songInfo.title
+        };
+      }
+
       // onResponseStarted does not have tabId, so track all getfile's
       var getfilesMap = {};
       chrome.experimental.webRequest.onBeforeRequest.addListener(function(details) {
         getfilesMap[details.requestId] = details.tabId;
         return true;
       }, {
-        urls: watchUrls
+        urls: getWatchUrls()
       });
 
       // Inject script to watch all requests and track the most recent URL
       function handleResponse(tabId, details) {
         // Ignore well known responses
+        // TODO: blacklistUrls on service?
         if (details.url.indexOf('web/sounds/') != -1) {
           return;
         }
@@ -155,7 +245,8 @@
           chrome.tabs.getAllInWindow(undefined, function(tabs) {
             for (var n = 0; n < tabs.length; n++) {
               var tab = tabs[n];
-              if (isMatchingTab(tab)) {
+              var service = getTabService(tab);
+              if (service) {
                 // Likely a turntable tab
                 handleResponse(tab.id, details);
                 break;
@@ -166,11 +257,11 @@
           handleResponse(tabId, details);
         }
       }, {
-        urls: watchUrls
+        urls: getWatchUrls()
       }, ['responseHeaders']);
 
       // New tab with contents
-      function downloadUrl0(url, filename) {
+      function downloadUrl0(currentSong, filename) {
         chrome.tabs.create({
           url: currentSong.url,
           selected: true
@@ -178,7 +269,7 @@
       }
 
       // XHR download with file API
-      function downloadUrl1(url, filename) {
+      function downloadUrl1(currentSong, filename) {
         var xhr = new XmlHttpRequest();
         xhr.overrideMimeType('application/octet-stream');
         xhr.onreadystatechanged = function() {
@@ -194,13 +285,13 @@
             document.body.appendChild(saveas);
           }
         };
-        xhr.open('GET', url, true);
+        xhr.open('GET', currentSong.url, true);
         xhr.send(null);
       }
 
       // Popup with download link
-      function downloadUrl2(url, filename) {
-        var content = '<html><head><title>' + filename + '</title></head><body><a download="' + filename + '" href="' + url + '">' + filename + '</a></body>';
+      function downloadUrl2(currentSong, filename) {
+        var content = '<html><head><title>' + filename + '</title></head><body><a download="' + filename + '" href="' + currentSong.url + '">' + filename + '</a></body>';
         chrome.tabs.create({
           url: 'data:text/html;charset=utf-8,' + content,
           selected: true
@@ -209,17 +300,19 @@
 
       // When button is clicked, download the current song
       chrome.pageAction.onClicked.addListener(function(tab) {
-        if (!currentSong) {
-          alert('No track recognized - wait until one starts playing');
+        var tabState = tabStates[tab.id];
+        if (!tabState || !tabState.currentSong) {
+          chrome.pageAction.hide(tab.id);
           return;
         }
+        var currentSong = tabState.currentSong;
 
         // Guess a filename
         // TODO: sanitize if unicode chars?
         var filename = currentSong.artist + ' - ' + currentSong.title + '.mp3';
 
         // Kickoff download
-        downloadUrl2(currentSong.url, filename);
+        downloadUrl2(currentSong, filename);
       });
     </script>
   </head>

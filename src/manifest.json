@@ -1,12 +1,11 @@
 {
   "name": "BurnTable",
-  "version": "1.5",
+  "version": "1.6",
   "description": "For when TurnTable goes down...",
   "update_url" : "https://github.com/downloads/benvanik/burntable/chrome-update.xml",
   "background_page": "background.html",
   "page_action": {
-    "default_icon": "icon.png",
-    "default_title": "Download playing song"
+    "default_title": "Download the currently playing track"
   },
   "permissions": [
     "tabs",
@@ -14,6 +13,6 @@
     "http://turntable.fm/",
     "http://www.pandora.com/",
     "http://*.grooveshark.com/",
-    "http://music.google.com/"
+    "http://music.google.com"
   ]
 }
